@@ -2,28 +2,16 @@
   <div v-if="visible" class="modal-overlay" @click.self="close">
     <div class="modal-container">
       <div class="modal-header">
-        <span>➕ Добавить метку</span>
+        <span>{{ markerToEdit ? 'Редактировать метку' : 'Добавить метку' }}</span>
         <button class="modal-close" @click="close">✕</button>
       </div>
 
       <div class="modal-body">
-        <!-- Выбор категории, если показываем оба слоя -->
-        <div v-if="showCategorySwitch" class="category-switch">
-          <button
-            :class="{ active: category === 'game' }"
-            @click="category = 'game'"
-          >
-            🏹 Дичь
-          </button>
-          <button
-            :class="{ active: category === 'alchemy' }"
-            @click="category = 'alchemy'"
-          >
-            🌿 Алхимия
-          </button>
+        <div v-if="showCategorySwitch && !markerToEdit" class="category-switch">
+          <button :class="{ active: category === 'game' }" @click="category = 'game'">🏹 Дичь</button>
+          <button :class="{ active: category === 'alchemy' }" @click="category = 'alchemy'">🌿 Алхимия</button>
         </div>
 
-        <!-- Выбор типа (иконки) -->
         <div class="field-label">Тип ресурса</div>
         <div class="type-grid">
           <button
@@ -44,12 +32,14 @@
         <div class="field-label">Описание</div>
         <textarea v-model="description" placeholder="Что здесь водится или растёт..."></textarea>
 
-        <div class="coords-hint">Координаты: {{ coordsStr }}</div>
+        <div class="coords-hint" v-if="coords">
+          Координаты: [{{ Math.round(coords.lat) }}, {{ Math.round(coords.lng) }}]
+        </div>
       </div>
 
       <div class="modal-footer">
         <button class="btn-cancel" @click="close">Отмена</button>
-        <button class="btn-add" @click="save">➕ Добавить</button>
+        <button class="btn-add" @click="save">{{ markerToEdit ? 'Сохранить' : 'Добавить' }}</button>
       </div>
     </div>
   </div>
@@ -60,46 +50,51 @@ import { ref, computed, watch } from 'vue';
 
 const props = defineProps({
   visible: Boolean,
-  coords: Object,        // { lat, lng }
-  layerMode: String,     // 'game', 'alchemy', 'both'
-  gameTypes: Array,      // список типов дичи
-  alchemyTypes: Array,   // список типов алхимии
+  coords: Object,
+  layerMode: String,
+  gameTypes: Array,
+  alchemyTypes: Array,
+  markerToEdit: Object
 });
 
-const emit = defineEmits(['close', 'save-game', 'save-alchemy']);
+const emit = defineEmits(['close', 'save']);
 
-const category = ref('game');       // для режима both
+const category = ref('game');
 const selectedType = ref('');
 const title = ref('');
 const description = ref('');
 
-// Сброс при открытии
 watch(() => props.visible, (newVal) => {
   if (newVal) {
-    category.value = 'game';
-    selectedType.value = '';
-    title.value = '';
-    description.value = '';
+    if (props.markerToEdit) {
+      const isAlchemy = props.alchemyTypes.some(t => t.id === props.markerToEdit.type);
+      category.value = isAlchemy ? 'alchemy' : 'game';
+      selectedType.value = props.markerToEdit.type;
+      title.value = props.markerToEdit.title;
+      description.value = props.markerToEdit.description;
+    } else {
+      category.value = 'game';
+      selectedType.value = '';
+      title.value = '';
+      description.value = '';
+    }
   }
 });
 
-// Показывать ли переключатель категорий
 const showCategorySwitch = computed(() => props.layerMode === 'both');
 
-// Актуальный список типов в зависимости от режима
 const currentTypeList = computed(() => {
+  if (props.markerToEdit) {
+    const isAlchemy = props.alchemyTypes.some(t => t.id === props.markerToEdit.type);
+    return isAlchemy ? props.alchemyTypes : props.gameTypes;
+  }
+  
   if (props.layerMode === 'game') return props.gameTypes;
   if (props.layerMode === 'alchemy') return props.alchemyTypes;
   if (props.layerMode === 'both') {
     return category.value === 'game' ? props.gameTypes : props.alchemyTypes;
   }
   return [];
-});
-
-// Строка координат для отображения
-const coordsStr = computed(() => {
-  if (!props.coords) return '';
-  return `[${Math.round(props.coords.lat)}, ${Math.round(props.coords.lng)}]`;
 });
 
 function save() {
@@ -109,24 +104,14 @@ function save() {
   if (!selectedType.value) return;
 
   const payload = {
-    coords: `[${Math.round(props.coords.lat)}, ${Math.round(props.coords.lng)}]`,
+    id: props.markerToEdit?.id,
+    coords: props.markerToEdit ? props.markerToEdit.coords : `[${Math.round(props.coords.lat)}, ${Math.round(props.coords.lng)}]`,
     type: selectedType.value,
     title: title.value.trim() || 'Без названия',
     description: description.value.trim(),
   };
 
-  if (props.layerMode === 'game') {
-    emit('save-game', payload);
-  } else if (props.layerMode === 'alchemy') {
-    emit('save-alchemy', payload);
-  } else if (props.layerMode === 'both') {
-    if (category.value === 'game') {
-      emit('save-game', payload);
-    } else {
-      emit('save-alchemy', payload);
-    }
-  }
-  close();
+  emit('save', payload);
 }
 
 function close() {
@@ -135,137 +120,202 @@ function close() {
 </script>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(3px);
-  z-index: 2000;
+.modal-overlay { 
+  position: fixed; 
+  top: 0; left: 0; width: 100%; height: 100%; 
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px); 
+  z-index: 2000; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+}
+
+.modal-container { 
+  background: rgba(20, 20, 20, 0.85); 
+  backdrop-filter: blur(16px);
+  width: 90%; 
+  max-width: 420px; 
+  border-radius: 16px; 
+  border: 1px solid rgba(255, 255, 255, 0.08); 
+  box-shadow: 0 20px 40px rgba(0,0,0,0.6); 
+  font-family: 'Crimson Text', serif; 
+  color: #e0e0e0;
+  overflow: hidden;
+}
+
+.modal-header { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  padding: 16px 20px; 
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05); 
+  font-weight: bold; 
+  font-family: 'Cinzel', serif; 
+  color: #e8c8a0;
+  font-size: 16px;
+}
+
+.modal-close { 
+  background: none; 
+  border: none; 
+  font-size: 18px; 
+  cursor: pointer; 
+  color: #a0a0a0; 
+  transition: color 0.2s;
+}
+
+.modal-close:hover { color: #e8c8a0; }
+
+.modal-body { padding: 20px; }
+
+.category-switch { 
+  display: flex; 
+  gap: 8px; 
+  margin-bottom: 20px; 
+  background: rgba(255, 255, 255, 0.03);
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.category-switch button { 
+  flex: 1; 
+  padding: 10px; 
+  background: transparent; 
+  border: none; 
+  border-radius: 8px; 
+  font-family: 'Cinzel', serif; 
+  font-weight: bold; 
+  color: #a0a0a0;
+  cursor: pointer; 
+  transition: all 0.2s;
+}
+
+.category-switch button:hover {
+  color: #e8c8a0;
+}
+
+.category-switch button.active { 
+  background: rgba(232, 200, 160, 0.15); 
+  color: #e8c8a0; 
+}
+
+.field-label { 
+  font-size: 11px; 
+  font-family: 'Cinzel', serif; 
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin: 16px 0 8px 0; 
+  color: #808080; 
+}
+
+.type-grid { 
+  display: flex; 
+  gap: 8px; 
+  flex-wrap: wrap; 
+}
+
+.type-btn { 
+  width: 44px; 
+  height: 44px; 
+  background: rgba(255, 255, 255, 0.03); 
+  border: none; 
+  border-radius: 10px; 
+  cursor: pointer; 
+  opacity: 0.5; 
+  transition: all 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.modal-container {
-  background: linear-gradient(180deg, #f5efe6, #e8dcc8);
-  width: 90%;
-  max-width: 450px;
-  border-radius: 12px;
-  border: 2px solid #8b7355;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-  font-family: 'Crimson Text', serif;
-}
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 2px solid #c4a87a;
-  font-weight: bold;
-  font-family: 'Cinzel', serif;
-}
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 20px;
-  cursor: pointer;
-  color: #8b2500;
-}
-.modal-body {
-  padding: 16px;
-}
-.category-switch {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-.category-switch button {
-  flex: 1;
-  padding: 8px;
-  background: rgba(139,115,85,0.2);
-  border: 1px solid #c4a87a;
-  border-radius: 30px;
-  font-family: 'Cinzel', serif;
-  font-weight: bold;
-  cursor: pointer;
-}
-.category-switch button.active {
-  background: #8b2500;
-  color: white;
-  border-color: #8b2500;
-}
-.field-label {
-  font-size: 12px;
-  font-family: 'Cinzel', serif;
-  margin: 12px 0 6px 0;
-  color: #6d5a48;
-}
-.type-grid {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.type-btn {
-  width: 48px;
-  height: 48px;
-  background: rgba(139,115,85,0.1);
-  border: 2px solid #c4a87a;
-  border-radius: 8px;
-  cursor: pointer;
-  opacity: 0.6;
-}
-.type-btn img {
-  width: 32px;
-  height: 32px;
-}
-.type-btn.selected {
+
+.type-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
   opacity: 1;
-  border-color: #8b2500;
-  background: rgba(139,37,0,0.2);
 }
-input, textarea {
-  width: 100%;
-  padding: 8px 10px;
-  background: rgba(255,255,255,0.7);
-  border: 1px solid #c4a87a;
-  border-radius: 6px;
-  font-family: inherit;
+
+.type-btn img { 
+  width: 24px; 
+  height: 24px; 
+  filter: brightness(0) invert(1);
 }
-textarea {
-  min-height: 70px;
-  resize: vertical;
+
+.type-btn.selected { 
+  opacity: 1; 
+  background: rgba(232, 200, 160, 0.15);
+  box-shadow: inset 0 0 0 1px rgba(232, 200, 160, 0.3);
 }
-.coords-hint {
-  margin-top: 12px;
-  font-size: 11px;
-  color: #6d5a48;
-  text-align: center;
-  background: rgba(0,0,0,0.05);
-  padding: 4px;
-  border-radius: 4px;
+
+input, textarea { 
+  width: 100%; 
+  padding: 12px; 
+  background: rgba(255, 255, 255, 0.05); 
+  border: 1px solid rgba(255, 255, 255, 0.08); 
+  border-radius: 10px; 
+  font-family: inherit; 
+  color: #fff;
+  font-size: 14px;
+  transition: border-color 0.2s;
+  outline: none;
 }
-.modal-footer {
-  display: flex;
-  gap: 12px;
-  padding: 12px 16px;
-  border-top: 1px solid #c4a87a;
+
+input:focus, textarea:focus {
+  border-color: rgba(232, 200, 160, 0.4);
 }
-.modal-footer button {
-  flex: 1;
-  padding: 8px;
-  border-radius: 6px;
-  font-weight: bold;
-  cursor: pointer;
+
+textarea { 
+  min-height: 80px; 
+  resize: vertical; 
 }
-.btn-add {
-  background: linear-gradient(135deg, #8b2500, #6b1c00);
-  border: none;
-  color: white;
+
+.coords-hint { 
+  margin-top: 16px; 
+  font-size: 12px; 
+  color: #808080; 
+  text-align: center; 
+  background: rgba(255, 255, 255, 0.03); 
+  padding: 8px; 
+  border-radius: 8px; 
 }
-.btn-cancel {
-  background: transparent;
-  border: 1px solid #8b7355;
+
+.modal-footer { 
+  display: flex; 
+  gap: 12px; 
+  padding: 16px 20px; 
+  border-top: 1px solid rgba(255, 255, 255, 0.05); 
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.modal-footer button { 
+  flex: 1; 
+  padding: 12px; 
+  border-radius: 10px; 
+  font-weight: bold; 
+  cursor: pointer; 
+  font-family: 'Cinzel', serif;
+  transition: all 0.2s;
+}
+
+.btn-add { 
+  background: #e8c8a0; 
+  border: none; 
+  color: #1a1a1a; 
+  box-shadow: 0 4px 15px rgba(232, 200, 160, 0.2);
+}
+
+.btn-add:hover {
+  background: #f0d5b5;
+  transform: translateY(-1px);
+}
+
+.btn-cancel { 
+  background: transparent; 
+  border: 1px solid rgba(255, 255, 255, 0.1); 
+  color: #a0a0a0;
+}
+
+.btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #e0e0e0;
 }
 </style>
