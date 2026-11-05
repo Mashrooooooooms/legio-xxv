@@ -102,7 +102,7 @@ import "leaflet/dist/leaflet.css";
 import AddMarkerModal from "./AddMarkerModal.vue";
 
 const BASE = import.meta.env.BASE_URL;
-const API_BASE = 'https://89.127.206.247';
+const API_BASE = 'https://89.127.206.247.nip.io';
 
 const gameTypes = [
   { id: "elk", name: "Олень", icon: BASE + "elk.png" },
@@ -117,6 +117,8 @@ const gameTypes = [
   { id: "eleph", name: "Мамонт", icon: BASE + "eleph.png" },
   { id: "gig", name: "Великан", icon: BASE + "gig.png" },
   { id: "bird", name: "Фазан", icon: BASE + "bird.png" },
+  { id: "fish", name: "Рыба", icon: BASE + "fish.png" },
+  { id: "honey", name: "Мёд", icon: BASE + "honey.png" },
 ];
 
 const alchemyTypes = [
